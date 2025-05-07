@@ -1,0 +1,46 @@
+server:
+  http_listen_port: 9080
+
+clients:
+  - url: http://10.21.100.198:3100/loki/api/v1/push #you loki ip and port
+
+scrape_configs:
+  - job_name: system
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: system
+          __path__: /var/log/syslog
+      - targets: [localhost]
+        labels:
+          job: system
+          __path__: /var/log/auth.log
+
+  - job_name: docker
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: docker
+          __path__: /var/lib/docker/containers/*/*.log
+    pipeline_stages:
+      - docker: {}
+
+  - job_name: mongodb
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: mongodb
+          __path__: /var/log/mongodb/mongod.log
+      - targets: [localhost]
+        labels:
+          job: mongodb
+          __path__: /var/log/mongodb/mongos.log
+    pipeline_stages:
+      - match:
+          selector: '{job="mongodb"}'
+          stages:
+          - regex:
+              expression: '(?P<timestamp>\S+)\s+(?P<severity>\w+)\s+(?P<component>\w+)\s+\[(?P<context>\S+)\]\s+(?P<message>.+)'
+          - labels:
+              severity:
+              component:
