@@ -1,0 +1,20 @@
+#
+# this file for node side or client side
+# create a dir put both file in same dir and then do docker-compose up -d
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'node_exporter'
+    static_configs:
+      - targets: ['10.21.121.80:9101']
+
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['10.21.121.80:8086']
