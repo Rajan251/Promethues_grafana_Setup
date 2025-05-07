@@ -1,31 +1,39 @@
-# 🔍 InfraWatchKit
+# 📡 InfraWatchKit
 
-**InfraWatchKit** is a comprehensive repository for all things related to **monitoring and observability**. It includes setup guides, configuration files, and scripts for popular monitoring tools like **Prometheus**, **Grafana**, and the **ELK Stack (Elasticsearch, Logstash, Kibana)**. Whether you're setting up dashboards, scraping metrics, or configuring log pipelines, this repo serves as your all-in-one toolkit.
+A **complete infrastructure monitoring & logging toolkit**, designed for engineers who want full control over observability setups in both **Docker-based environments** and **bare-metal servers**.
+
+> This repository is perfect for DevOps professionals, system administrators, and SREs who prefer clarity, control, and customization over black-box tools and pre-baked scripts.
 
 ---
 
-## 📦 Contents
+## 🔍 What's Inside?
 
-### ✅ Prometheus
-- Configuration files (`prometheus.yml`)
-- Exporter setups (Node Exporter, Blackbox Exporter, etc.)
-- Custom scrape configs
-- Alertmanager configuration
-- Recording and alerting rules
+InfraWatchKit provides:
 
-### 📈 Grafana
-- Dashboard JSON files
-- Data source configuration
-- Provisioning setup
-- Integration with Prometheus and Loki
+### ✅ Monitoring Stack (Docker & Server)
 
-### 📊 ELK Stack (Elasticsearch, Logstash, Kibana)
-- Logstash pipeline configuration files
-- Beats setup (Filebeat, Metricbeat)
-- Elasticsearch cluster configuration
-- Kibana dashboard and visualizations
-- Index lifecycle policies (ILM)
+- **Prometheus** – Metric scraping and alerting
+- **Grafana** – Visualization and dashboards
+- Predefined targets and scrape configs
+- Ready-to-use dashboard JSONs
 
-### 📡 Monitoring & Observability Scripts
-- Containerized setups for local testing
-- Health check utilities
+### ✅ Logging Stack (Docker & Server)
+
+- **Elasticsearch** – Scalable log storage
+- **Logstash** – Parsing and pipeline config
+- **Kibana** – Log visualization and search
+- Filebeat or other log forwarder setup references
+
+### ✅ Docker-Based Setup
+
+- `docker-compose.yml` files for:
+  - Prometheus + Grafana stack
+  - ELK stack (Elasticsearch, Logstash, Kibana)
+- Volume mounts, environment files, networking setup
+- Config files structured and mounted properly
+
+### ✅ Manual Server Configuration (No Auto Scripts)
+
+- Docker & Docker Compose installation
+- SSH hardening, UFW firewall, system tuning (`sysctl`)
+- Folder structure and setup steps for servers without containers
