@@ -2,7 +2,7 @@ server:
   http_listen_port: 9080
 
 clients:
-  - url: http://10.21.100.198:3100/loki/api/v1/push #you loki ip and port
+  - url: http://10.21.126.12:3100/loki/api/v1/push #your loki ip and port
 
 scrape_configs:
   - job_name: system
@@ -30,11 +30,11 @@ scrape_configs:
       - targets: [localhost]
         labels:
           job: mongodb
-          __path__: /var/log/mongodb/mongod.log
+          __path__: /var/log/mongodb/mongod.log # give you logs path it depends on you os.
       - targets: [localhost]
         labels:
           job: mongodb
-          __path__: /var/log/mongodb/mongos.log
+          __path__: /var/log/mongodb/mongos.log # give you logs path it depends on you os as all place where you have give path
     pipeline_stages:
       - match:
           selector: '{job="mongodb"}'
@@ -44,3 +44,56 @@ scrape_configs:
           - labels:
               severity:
               component:
+
+  - job_name: mysql
+    static_configs:
+      # MySQL Error Log
+      - targets: [localhost]
+        labels:
+          job: mysql
+          log_type: error
+          __path__: /var/log/mysql/error.log 
+      # MySQL Slow Query Log
+      - targets: [localhost]
+        labels:
+          job: mysql
+          log_type: slow_query
+          __path__: /var/log/mysql/mysql-slow.log
+      # MySQL General Query Log
+      - targets: [localhost]
+        labels:
+          job: mysql
+          log_type: general
+          __path__: /var/log/mysql/mysql.log
+      # MySQL Binary Log (if text format)
+      - targets: [localhost]
+        labels:
+          job: mysql
+          log_type: binlog
+          __path__: /var/log/mysql/mysql-bin.*
+    pipeline_stages:
+      - match:
+          selector: '{job="mysql"}'
+          stages:
+          - regex:
+              expression: '(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s+(?P<thread_id>\d+)\s+\[(?P<level>\w+)\]\s+(?P<message>.+)'
+          - timestamp:
+              source: timestamp
+              format: RFC3339
+          - labels:
+              level:
+              thread_id:
+      # MySQL slow query log format
+      - match:
+          selector: '{job="mysql", log_type="slow_query"}'
+          stages:
+          - regex:
+              expression: '# Time: (?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)'
+          - timestamp:
+              source: timestamp
+              format: RFC3339
+      # Filter out connection logs (optional)
+      - drop:
+          source: message
+          expression: '.*Connect.*'
+          drop_counter_reason: "connection_logs"
