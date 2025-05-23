@@ -2,7 +2,7 @@ server:
   http_listen_port: 9080
 
 clients:
-  - url: http://10.21.126.12:3100/loki/api/v1/push #your loki ip and port
+  - url: http://10.21.120.136:3100/loki/api/v1/push #your loki ip and port
 
 scrape_configs:
   - job_name: system
@@ -30,11 +30,11 @@ scrape_configs:
       - targets: [localhost]
         labels:
           job: mongodb
-          __path__: /var/log/mongodb/mongod.log # give you logs path it depends on you os.
+          __path__: /var/log/mongodb/mongod.log
       - targets: [localhost]
         labels:
           job: mongodb
-          __path__: /var/log/mongodb/mongos.log # give you logs path it depends on you os as all place where you have give path
+          __path__: /var/log/mongodb/mongos.log
     pipeline_stages:
       - match:
           selector: '{job="mongodb"}'
@@ -52,7 +52,7 @@ scrape_configs:
         labels:
           job: mysql
           log_type: error
-          __path__: /var/log/mysql/error.log 
+          __path__: /var/log/mysql/error.log
       # MySQL Slow Query Log
       - targets: [localhost]
         labels:
@@ -97,3 +97,55 @@ scrape_configs:
           source: message
           expression: '.*Connect.*'
           drop_counter_reason: "connection_logs"
+  
+  - job_name: nginx
+    static_configs:
+      # Nginx Access Log
+      - targets: [localhost]
+        labels:
+          job: nginx
+          log_type: access
+          __path__: /var/log/nginx/access.log
+      # Nginx Error Log
+      - targets: [localhost]
+        labels:
+          job: nginx
+          log_type: error
+          __path__: /var/log/nginx/error.log
+      # Additional nginx log files (if you have custom configs)
+      - targets: [localhost]
+        labels:
+          job: nginx
+          log_type: access
+          __path__: /var/log/nginx/*access.log
+      - targets: [localhost]
+        labels:
+          job: nginx
+          log_type: error
+          __path__: /var/log/nginx/*error.log
+    pipeline_stages:
+      # Parse nginx access logs (common log format)
+      - match:
+          selector: '{job="nginx", log_type="access"}'
+          stages:
+            - regex:
+                expression: '(?P<remote_addr>\S+)\s+-\s+(?P<remote_user>\S+)\s+\[(?P<time_local>[^\]]+)\]\s+"(?P<method>\S+)\s+(?P<path>\S+)\s+(?P<protocol>\S+)"\s+(?P<status>\d+)\s+(?P<body_bytes_sent>\d+)\s+"(?P<http_referer>[^"]*)"\s+"(?P<http_user_agent>[^"]*)"'
+            - labels:
+                method:
+                status:
+                remote_addr:
+            - timestamp:
+                source: time_local
+                format: '02/Jan/2006:15:04:05 -0700'
+      # Parse nginx error logs
+      - match:
+          selector: '{job="nginx", log_type="error"}'
+          stages:
+            - regex:
+                expression: '(?P<timestamp>\d{4}/\d{2}/\d{2}\s+\d{2}:\d{2}:\d{2})\s+\[(?P<level>\w+)\]\s+(?P<pid>\d+)#(?P<tid>\d+):\s+(?P<message>.*)'
+            - timestamp:
+                source: timestamp
+                format: '2006/01/02 15:04:05'
+            - labels:
+                level:
+                pid:
