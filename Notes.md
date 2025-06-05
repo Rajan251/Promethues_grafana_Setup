@@ -1,183 +1,133 @@
-**complete list of commands** you can run on an **Ubuntu server** to detect and troubleshoot the hidden issues mentioned earlier.  
+# **Detecting and Troubleshooting Microsecond Spikes on Servers**
+
+## **Why Standard Monitoring Misses Microsecond Spikes**
+Most monitoring tools (Prometheus, Zabbix, CloudWatch) use **1-60 second intervals**, missing:
+- **CPU spikes lasting <100ms**
+- **Disk I/O micro-stalls**
+- **Network packet jitter**
+- **Kernel scheduler delays**
+
+**Impact on DB Servers:**
+| Spike Type       | Database Impact                                                                 |
+|------------------|--------------------------------------------------------------------------------|
+| **100ms CPU**    | Query timeouts, replication lag, connection drops                              |
+| **Disk I/O**     | Transaction stalls, write delays, InnoDB buffer pool issues                    |
+| **Network**      | Replication failures, cluster split-brain risk                                 |
+| **Kernel**       | MySQL thread scheduling delays, lock contention                                |
 
 ---
 
-## **🛠️ Commands to Fix Hidden Problems (Ubuntu Server)**  
+## **Troubleshooting Commands (Ubuntu Server)**
 
-### **1. ⚡ Catch Tiny CPU/Memory/Disk Spikes**  
-**Problem:** Short bursts of high CPU/Disk/Memory that normal tools miss.  
-
-#### **Commands:**  
+### **1. Detect CPU Spikes (<100ms)**
 ```bash
-# Install sysstat (for 'sar' and 'iostat')
-sudo apt update && sudo apt install sysstat -y
+# Install necessary tools
+sudo apt install linux-tools-common linux-tools-$(uname -r) sysstat -y
 
-# Start sysstat (enables historical data collection)
-sudo systemctl enable sysstat && sudo systemctl start sysstat
+# Real-time CPU usage (millisecond precision)
+perf stat -e cpu-clock -a sleep 1
 
-# Check CPU spikes (every 1 second, 10 times)
-sar -u 1 10
+# Check CPU run queue (tasks waiting)
+sar -q 1 3  # Look for 'runq-sz' > CPU cores
 
-# Check memory usage (every 1 second)
-sar -r 1 5
-
-# Check disk I/O (every 1 second)
-iostat -dx 1 5
-
-# Check process-level CPU usage (top alternative)
-pidstat -u 1 5
+# Identify processes causing spikes
+pidstat -u 1 5 -l
 ```
 
----
-
-### **2. 🔁 Detect Kernel-Level Traffic Jams (CPU Scheduler, Run Queue)**  
-**Problem:** Too many tasks waiting for CPU (invisible in normal monitoring).  
-
-#### **Commands:**  
+### **2. Catch Disk I/O Micro-Stalls**
 ```bash
-# Check CPU run queue (how many tasks are waiting)
-sar -q 1 5
+# Check I/O latency at µs level
+sudo iostat -xmd 1 3 | grep -E 'Device|await'
 
-# Check context switches (high = too many small tasks)
-sar -w 1 5
+# Kernel block layer tracing
+sudo blktrace -d /dev/nvme0n1 -o - | blkparse -i -
 
-# Advanced: Use 'perf' to see kernel scheduling delays
-sudo apt install linux-tools-common linux-tools-$(uname -r) -y
+# Alternative: bpftrace for disk latency
+sudo bpftrace -e 'kprobe:blk_account_io_start { @start[tid] = nsecs; } kprobe:blk_account_io_done { @usecs = hist(nsecs - @start[tid]); delete(@start[tid]); }'
+```
+
+### **3. Network Jitter Analysis**
+```bash
+# Micro-latency detection
+ping -A -i 0.001 google.com  # Look for >1ms spikes
+
+# Advanced: tcptraceroute for TCP-level jitter
+sudo apt install tcptraceroute
+tcptraceroute -n -f 64 -m 64 example.com 3306
+```
+
+### **4. Kernel Scheduler Issues**
+```bash
+# Check for scheduler latency
 sudo perf sched latency
+
+# System-wide tracing
+sudo trace-cmd record -e sched:sched_switch sleep 1
+trace-cmd report
 ```
 
 ---
 
-### **3. 🐢 Detect Micro-Network Latency (Jitter, Packet Loss)**  
-**Problem:** Tiny internet slowdowns causing apps to fail randomly.  
+## **Specialized Monitoring Tools**
 
-#### **Commands:**  
+### **1. For µs-Level Spikes**
+| Tool            | Best For                          | Install Command                     |
+|-----------------|-----------------------------------|-------------------------------------|
+| **eBPF/bpftrace** | Kernel-level tracing              | `sudo apt install bpftrace`         |
+| **perf**        | CPU pipeline stalls               | Part of `linux-tools` package       |
+| **nicstat**     | Micro-network drops               | `sudo apt install nicstat`          |
+
+### **2. Persistent Monitoring**
 ```bash
-# Install mtr (combines ping + traceroute)
-sudo apt install mtr -y
+# Netdata (real-time dashboard)
+bash <(curl -Ss https://my-netdata.io/kickstart.sh)
 
-# Continuous ping test (check for packet loss)
-ping -i 0.1 google.com
-
-# MTR (shows network path + packet loss)
-mtr --report google.com
-
-# Check DNS resolution time (slow DNS = slow apps)
-dig google.com | grep "Query time"
+# Vector (high-res metrics collection)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.vector.dev | sh
 ```
 
----
-
-### **4. 📉 Detect Disk Burst Credit Depletion (AWS EBS Slowdowns)**  
-**Problem:** Disk suddenly slows down because it ran out of "burst credits."  
-
-#### **Commands:**  
+### **3. Database-Specific Tools**
 ```bash
-# Check disk I/O latency (high = problem)
-iostat -dxm 1 5
+# MySQL InnoDB metrics
+SHOW ENGINE INNODB STATUS\G
 
-# Check AWS EBS burst balance (if on AWS)
-# (Requires AWS CLI + CloudWatch)
-aws cloudwatch get-metric-statistics \
-  --namespace AWS/EBS \
-  --metric-name BurstBalance \
-  --dimensions Name=VolumeId,Value=vol-1234567890 \
-  --statistics Average \
-  --period 60 \
-  --start-time $(date -u +"%Y-%m-%dT%H:%M:%SZ" --date="-5 minutes") \
-  --end-time $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+# PostgreSQL wait events
+SELECT * FROM pg_stat_activity WHERE wait_event_type IS NOT NULL;
 ```
 
 ---
 
-### **5. � Check Docker/Container Throttling**  
-**Problem:** Containers get slowed down, but host looks fine.  
+## **Troubleshooting Workflow**
+1. **Reproduce the Spike**:  
+   ```bash
+   stress-ng --cpu 1 --timeout 100ms  # Simulate 100ms CPU spike
+   ```
 
-#### **Commands:**  
-```bash
-# Install cAdvisor (Google’s container monitor)
-docker run -d \
-  --name=cadvisor \
-  --volume=/:/rootfs:ro \
-  --volume=/var/run:/var/run:ro \
-  --volume=/sys:/sys:ro \
-  --volume=/var/lib/docker/:/var/lib/docker:ro \
-  --publish=8080:8080 \
-  --detach=true \
-  gcr.io/cadvisor/cadvisor:v0.47.0
+2. **Correlate Metrics**:  
+   ```bash
+   # Run simultaneously:
+   perf stat -e cpu-clock -a sleep 1 &  # CPU
+   iostat -xmd 1 &                      # Disk
+   ping -A -i 0.001 db-replica &        # Network
+   ```
 
-# Check container stats (CPU, memory, I/O)
-docker stats
+3. **Check Kernel Logs**:  
+   ```bash
+   dmesg -T | grep -E 'sched|oom|cpu'
+   ```
 
-# Check if a container is being throttled
-docker inspect <container_id> | grep -i throttled
-```
-
----
-
-### **6. � Detect App-Level Stalls (DB Waits, Lock Contention)**  
-**Problem:** App is stuck waiting for a database, but CPU is low.  
-
-#### **Commands:**  
-```bash
-# For MySQL/MariaDB: Check slow queries
-sudo apt install mysql-client -y
-mysql -u root -p -e "SHOW FULL PROCESSLIST;"
-
-# For PostgreSQL: Check locks
-sudo -u postgres psql -c "SELECT * FROM pg_locks;"
-
-# General Linux: Check which processes are in 'D' state (uninterruptible sleep)
-ps aux | awk '$8 == "D" { print $0 }'
-```
+4. **Profile Database**:  
+   ```sql
+   /* MySQL */ SET GLOBAL slow_query_log=1; SET long_query_time=0.1;
+   /* PostgreSQL */ ALTER SYSTEM SET log_min_duration_statement=100;
+   ```
 
 ---
 
-### **7. 💥 Detect DNS Failures (Apps Failing Randomly)**  
-**Problem:** DNS fails once, app crashes, no logs.  
+## **Key Fixes for DB Servers**
+- **CPU Spikes**: Adjust CFS scheduler (`/proc/sys/kernel/sched_latency_ns`)
+- **Disk I/O**: Switch to **NOOP scheduler** for NVMe (`echo noop > /sys/block/nvme0n1/queue/scheduler`)
+- **Network**: Enable **TCP BBR** (`echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf`)
+- **Kernel**: Update to **Low-Latency Kernel** (`sudo apt install linux-lowlatency`)
 
-#### **Commands:**  
-```bash
-# Test DNS resolution time
-time nslookup google.com
-
-# Check system DNS cache (if using systemd-resolved)
-sudo systemd-resolve --statistics
-
-# Force clear DNS cache (if issues)
-sudo systemd-resolve --flush-caches
-```
-
----
-
-### **8. 🔒 Detect Security Issues (Failed Logins, Attacks)**  
-**Problem:** Hackers try to break in, but logs are ignored.  
-
-#### **Commands:**  
-```bash
-# Check failed SSH logins
-sudo grep "Failed password" /var/log/auth.log
-
-# Install & configure Fail2Ban (blocks brute-force attacks)
-sudo apt install fail2ban -y
-sudo systemctl enable fail2ban && sudo systemctl start fail2ban
-
-# Check active bans
-sudo fail2ban-client status sshd
-```
-
----
-
-## **🎯 Summary Cheat Sheet**  
-| Problem | Command(s) |
-|---------|------------|
-| **CPU/Memory/Disk Spikes** | `sar -u 1 5`, `iostat -dx 1 5` |
-| **Kernel Traffic Jams** | `sar -q 1 5`, `perf sched latency` |
-| **Network Jitter** | `mtr --report google.com`, `ping -i 0.1 google.com` |
-| **Disk Burst Credit Issues** | `iostat -dxm 1 5`, AWS `BurstBalance` metric |
-| **Container Throttling** | `docker stats`, `cAdvisor` |
-| **App Stalls (DB Locks)** | MySQL: `SHOW PROCESSLIST;`, Postgres: `SELECT * FROM pg_locks;` |
-| **DNS Failures** | `nslookup google.com`, `systemd-resolve --flush-caches` |
-| **Security (SSH Attacks)** | `grep "Failed password" /var/log/auth.log`, `fail2ban-client status` |
-
-Now you can **find and fix hidden problems** like a pro! 🚀
+> **Pro Tip**: For AWS/GCP, use **Enhanced Monitoring** (1-5s granularity) and pair with `perf` for µs-level analysis.
